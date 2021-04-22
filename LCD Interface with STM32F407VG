@@ -1,0 +1,116 @@
+#include <stdint.h>
+#include <stdio.h>
+#include "main.h"
+
+#if !defined(__SOFT_FP__) && defined(__ARM_FP)
+  #warning "FPU is not initialized, but the project is compiling for an FPU. Please initialize the FPU before use."
+#endif
+
+#define CMD		0
+#define DATA	1
+
+void delay(uint32_t);
+void pulseEN(GPIOxODR_t *);
+void CmdData(uint8_t, uint8_t,GPIOxODR_t *);
+void setCursor(uint8_t, uint8_t,GPIOxODR_t *);
+void lcd_init(GPIOxODR_t *, GPIOxMODE_t*);
+void print(char *, GPIOxODR_t *);
+
+int main(void)
+{
+	// We have to implement an LCD display, a temperature sensor, a humidity sensor, moisture sensor, rain sensor, a DC motor pump and an LCD screen.
+
+	RCC_AHB1ENR_t volatile *const pRCC_AHB1_ENR = (RCC_AHB1ENR_t*) 0x40023830;
+	GPIOxMODE_t volatile *const pGPIOAMODER = (GPIOxMODE_t*) 0x40020000;
+	GPIOxODR_t volatile *const pGPIOAODR = (GPIOxODR_t*) 0x40020014;
+
+	// enabling clock for port A
+	pRCC_AHB1_ENR ->GPIOA_EN = 1;
+
+	pGPIOAMODER->pin_0  =  1; 	  // RS
+	pGPIOAMODER->pin_1  =  1; 	  // E
+	pGPIOAMODER->pin_2  =  1; 	  // D4
+	pGPIOAMODER->pin_3  =  1; 	  // D5
+	pGPIOAMODER->pin_8  =  1; 	  // D6
+	pGPIOAMODER->pin_15 =  1;	  // D7
+
+	lcd_init(pGPIOAODR,pGPIOAMODER);
+	lcdPrint("Hello World!", pGPIOAODR);
+
+    while(1);
+}
+
+void delay(uint32_t t)
+{
+	for(uint32_t i = 0;i<t;i++);
+}
+
+void pulseEN(GPIOxODR_t *pGPIOAODR)
+{
+	pGPIOAODR->pin_1 = 1;
+	delay(0xFF);
+	pGPIOAODR->pin_1 = 0;
+	delay(0xFF);
+}
+
+void CmdData(uint8_t value, uint8_t mode, GPIOxODR_t *pGPIOAODR)
+{
+	if(mode == CMD)
+		pGPIOAODR->pin_0 = 0;
+	else
+		pGPIOAODR->pin_0 = 1;
+
+	pGPIOAODR->pin_15 = ((value & 0x80)>>7);
+	pGPIOAODR->pin_8  = ((value & 0x40)>>6);
+	pGPIOAODR->pin_3  = ((value & 0x20)>>5);
+	pGPIOAODR->pin_2  = ((value & 0x10)>>4);
+	pulseEN(pGPIOAODR);
+	delay(0xFF);
+	pGPIOAODR->pin_15 = ((value & 0x08)>>3);
+	pGPIOAODR->pin_8  = ((value & 0x04)>>2);
+	pGPIOAODR->pin_3  = ((value & 0x02)>>1);
+	pGPIOAODR->pin_2  = ((value & 0x01)>>0);
+	pulseEN(pGPIOAODR);
+	delay(0xFF);
+}
+
+void setCursor(uint8_t row, uint8_t col, GPIOxODR_t* pGPIOAODR)
+{
+	uint8_t const row_offsets[] = {0x00,0x40};
+	CmdData(0x80 | (col + row_offsets[row]), CMD, pGPIOAODR);
+	delay(0xFF);
+}
+
+void lcd_init(GPIOxODR_t *pGPIOAODR,GPIOxMODE_t* pGPIOAMODER)
+{
+	pGPIOAMODER->pin_0  =  1; 	  // RS
+	pGPIOAMODER->pin_1  =  1; 	  // E
+	pGPIOAMODER->pin_2  =  1; 	  // D4
+	pGPIOAMODER->pin_3  =  1; 	  // D5
+	pGPIOAMODER->pin_8  =  1; 	  // D6
+	pGPIOAMODER->pin_15 =  1;	  // D7
+	delay(0xFF);
+
+	CmdData(0x33,CMD, pGPIOAODR);
+	delay(0xFF);
+	CmdData(0x32,CMD, pGPIOAODR);
+	delay(0x0F);
+	CmdData(0x28,CMD, pGPIOAODR);
+	delay(0x0F);
+	CmdData(0x0C,CMD, pGPIOAODR);
+	delay(0x0F);
+	CmdData(0x01,CMD, pGPIOAODR);
+	delay(0x0F);
+	CmdData(0x06,CMD, pGPIOAODR);
+	delay(0x0F);
+	setCursor(0,0,pGPIOAODR);
+}
+
+void lcdPrint(char *s, GPIOxODR_t *pGPIOAODR)
+{
+	while(*s)
+	{
+		CmdData(*s,DATA,pGPIOAODR);
+		s++;
+	}
+}
